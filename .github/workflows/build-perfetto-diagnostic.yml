@@ -1,6 +1,9 @@
 name: Perfetto Android diagnostic build
 
 on:
+  push:
+    branches:
+      - a725-dev
   workflow_dispatch:
 
 permissions:
