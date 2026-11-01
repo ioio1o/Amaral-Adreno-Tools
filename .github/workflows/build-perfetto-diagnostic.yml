@@ -1,0 +1,70 @@
+name: Perfetto Android diagnostic build
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: perfetto-diagnostic-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Install host tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            bison \
+            build-essential \
+            file \
+            flex \
+            glslang-tools \
+            pkg-config \
+            python3-venv \
+            unzip \
+            zip
+
+      - name: Install pinned Python build tools
+        run: |
+          python3 -m venv work/venv
+          work/venv/bin/pip install --requirement requirements-build.txt
+          echo "${GITHUB_WORKSPACE}/work/venv/bin" >> "${GITHUB_PATH}"
+
+      - name: Download verified Android NDK r29
+        run: |
+          mkdir -p work/toolchains
+          curl --fail --location \
+            --output work/android-ndk-r29-linux.zip \
+            https://dl.google.com/android/repository/android-ndk-r29-linux.zip
+          echo "87e2bb7e9be5d6a1c6cdf5ec40dd4e0c6d07c30b  work/android-ndk-r29-linux.zip" \
+            | sha1sum --check
+          unzip -q work/android-ndk-r29-linux.zip -d work/toolchains
+
+      - name: Build Perfetto diagnostic driver
+        env:
+          NDK_ROOT: ${{ github.workspace }}/work/toolchains/android-ndk-r29
+          DRIVER_VARIANT: standard
+          ENABLE_PERFETTO: "1"
+        run: |
+          mkdir -p dist
+          set -o pipefail
+          ./scripts/build_universal.sh 2>&1 | tee dist/perfetto-diagnostic-build.log
+
+      - name: Upload diagnostic artifact and build log
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: turnip-perfetto-android-diagnostic
+          path: |
+            dist/*_perfetto-diagnostic.zip
+            dist/perfetto-diagnostic-build.log
+          if-no-files-found: error
+          retention-days: 14

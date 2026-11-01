@@ -25,6 +25,22 @@ output_root="${OUTPUT_ROOT:-${repo_root}/dist}"
 build_dir="${work_root}/build-${driver_variant}"
 install_root="${work_root}/install-${driver_variant}"
 package_dir="${work_root}/package-${driver_variant}"
+
+enable_perfetto="${ENABLE_PERFETTO:-0}"
+case "${enable_perfetto}" in
+  0) ;;
+  1)
+    build_dir="${work_root}/build-${driver_variant}-perfetto"
+    install_root="${work_root}/install-${driver_variant}-perfetto"
+    package_dir="${work_root}/package-${driver_variant}-perfetto"
+    artifact_suffix="${artifact_suffix}_perfetto-diagnostic"
+    ;;
+  *)
+    echo "ENABLE_PERFETTO inválido: ${enable_perfetto}; use 0 ou 1" >&2
+    exit 2
+    ;;
+esac
+
 lock_file="${repo_root}/config/mesa-lock.json"
 
 read_lock() {
@@ -153,8 +169,20 @@ export TZ=UTC LC_ALL=C PYTHONHASHSEED=0
 setup_mode=()
 [[ -f "${build_dir}/build.ninja" ]] && setup_mode+=(--wipe)
 
+perfetto_setup_args=()
+if [[ "${enable_perfetto}" == "1" ]]; then
+  meson subprojects download perfetto-sdk --sourcedir "${mesa_src}"
+  perfetto_setup_args=(
+    --force-fallback-for=perfetto,perfetto-sdk
+    -Dperfetto=true
+    -Ddatasources=freedreno
+    -Dandroid-libperfetto=disabled
+  )
+fi
+
 meson setup "${build_dir}" "${mesa_src}" "${setup_mode[@]}" \
-  --wrap-mode=nofallback --cross-file "${cross_file}" --native-file "${native_file}" \
+  --wrap-mode=nofallback "${perfetto_setup_args[@]}" \
+  --cross-file "${cross_file}" --native-file "${native_file}" \
   --prefix "${install_root}" -Dbuildtype=release -Db_ndebug=true -Dstrip=true \
   -Dplatforms=android -Dvideo-codecs= -Dplatform-sdk-version=36 -Dandroid-stub=true \
   -Dgallium-drivers= -Dvulkan-drivers=freedreno -Dvulkan-beta=true \
